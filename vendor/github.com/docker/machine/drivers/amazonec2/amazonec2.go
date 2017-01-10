@@ -264,7 +264,7 @@ func (d *Driver) buildClient() Ec2Client {
 	return ec2.New(session.New(config))
 }
 
-func (d *Driver) getClient() Ec2Client {
+func (d *Driver) GetClient() Ec2Client {
 	return d.clientFactory()
 }
 
@@ -346,7 +346,7 @@ func (d *Driver) SetConfigFromFlags(flags drivers.DriverOptions) error {
 			},
 		}
 
-		subnets, err := d.getClient().DescribeSubnets(&ec2.DescribeSubnetsInput{
+		subnets, err := d.GetClient().DescribeSubnets(&ec2.DescribeSubnetsInput{
 			Filters: subnetFilter,
 		})
 		if err != nil {
@@ -383,7 +383,7 @@ func (d *Driver) DriverName() string {
 
 func (d *Driver) checkPrereqs() error {
 	// check for existing keypair
-	key, err := d.getClient().DescribeKeyPairs(&ec2.DescribeKeyPairsInput{
+	key, err := d.GetClient().DescribeKeyPairs(&ec2.DescribeKeyPairsInput{
 		KeyNames: []*string{&d.MachineName},
 	})
 	if err != nil {
@@ -411,7 +411,7 @@ func (d *Driver) checkPrereqs() error {
 			},
 		}
 
-		subnets, err := d.getClient().DescribeSubnets(&ec2.DescribeSubnetsInput{
+		subnets, err := d.GetClient().DescribeSubnets(&ec2.DescribeSubnetsInput{
 			Filters: filters,
 		})
 		if err != nil {
@@ -516,7 +516,7 @@ func (d *Driver) Create() error {
 	var instance *ec2.Instance
 
 	if d.RequestSpotInstance {
-		spotInstanceRequest, err := d.getClient().RequestSpotInstances(&ec2.RequestSpotInstancesInput{
+		spotInstanceRequest, err := d.GetClient().RequestSpotInstances(&ec2.RequestSpotInstancesInput{
 			LaunchSpecification: &ec2.RequestSpotLaunchSpecification{
 				ImageId: &d.AMI,
 				Placement: &ec2.SpotPlacement{
@@ -540,7 +540,7 @@ func (d *Driver) Create() error {
 		}
 
 		log.Info("Waiting for spot instance...")
-		err = d.getClient().WaitUntilSpotInstanceRequestFulfilled(&ec2.DescribeSpotInstanceRequestsInput{
+		err = d.GetClient().WaitUntilSpotInstanceRequestFulfilled(&ec2.DescribeSpotInstanceRequestsInput{
 			SpotInstanceRequestIds: []*string{spotInstanceRequest.SpotInstanceRequests[0].SpotInstanceRequestId},
 		})
 		if err != nil {
@@ -553,7 +553,7 @@ func (d *Driver) Create() error {
 			// get a describe output that does not include this information. Try a
 			// few times just in case
 			var resolvedSpotInstance *ec2.DescribeSpotInstanceRequestsOutput
-			resolvedSpotInstance, err = d.getClient().DescribeSpotInstanceRequests(&ec2.DescribeSpotInstanceRequestsInput{
+			resolvedSpotInstance, err = d.GetClient().DescribeSpotInstanceRequests(&ec2.DescribeSpotInstanceRequestsInput{
 				SpotInstanceRequestIds: []*string{spotInstanceRequest.SpotInstanceRequests[0].SpotInstanceRequestId},
 			})
 			if err != nil {
@@ -563,7 +563,7 @@ func (d *Driver) Create() error {
 			maybeInstanceId := resolvedSpotInstance.SpotInstanceRequests[0].InstanceId
 			if maybeInstanceId != nil {
 				var instances *ec2.DescribeInstancesOutput
-				instances, err = d.getClient().DescribeInstances(&ec2.DescribeInstancesInput{
+				instances, err = d.GetClient().DescribeInstances(&ec2.DescribeInstancesInput{
 					InstanceIds: []*string{maybeInstanceId},
 				})
 				if err != nil {
@@ -581,7 +581,7 @@ func (d *Driver) Create() error {
 			return fmt.Errorf("Error resolving spot instance to real instance: %v", err)
 		}
 	} else {
-		inst, err := d.getClient().RunInstances(&ec2.RunInstancesInput{
+		inst, err := d.GetClient().RunInstances(&ec2.RunInstancesInput{
 			ImageId:  &d.AMI,
 			MinCount: aws.Int64(1),
 			MaxCount: aws.Int64(1),
@@ -710,11 +710,13 @@ func (d *Driver) GetSSHUsername() string {
 		d.SSHUser = defaultSSHUser
 	}
 
+	return "rancher"
+
 	return d.SSHUser
 }
 
 func (d *Driver) Start() error {
-	_, err := d.getClient().StartInstances(&ec2.StartInstancesInput{
+	_, err := d.GetClient().StartInstances(&ec2.StartInstancesInput{
 		InstanceIds: []*string{&d.InstanceId},
 	})
 	if err != nil {
@@ -725,7 +727,7 @@ func (d *Driver) Start() error {
 }
 
 func (d *Driver) Stop() error {
-	_, err := d.getClient().StopInstances(&ec2.StopInstancesInput{
+	_, err := d.GetClient().StopInstances(&ec2.StopInstancesInput{
 		InstanceIds: []*string{&d.InstanceId},
 		Force:       aws.Bool(false),
 	})
@@ -733,14 +735,14 @@ func (d *Driver) Stop() error {
 }
 
 func (d *Driver) Restart() error {
-	_, err := d.getClient().RebootInstances(&ec2.RebootInstancesInput{
+	_, err := d.GetClient().RebootInstances(&ec2.RebootInstancesInput{
 		InstanceIds: []*string{&d.InstanceId},
 	})
 	return err
 }
 
 func (d *Driver) Kill() error {
-	_, err := d.getClient().StopInstances(&ec2.StopInstancesInput{
+	_, err := d.GetClient().StopInstances(&ec2.StopInstancesInput{
 		InstanceIds: []*string{&d.InstanceId},
 		Force:       aws.Bool(true),
 	})
@@ -768,7 +770,7 @@ func (d *Driver) Remove() error {
 }
 
 func (d *Driver) getInstance() (*ec2.Instance, error) {
-	instances, err := d.getClient().DescribeInstances(&ec2.DescribeInstancesInput{
+	instances, err := d.GetClient().DescribeInstances(&ec2.DescribeInstancesInput{
 		InstanceIds: []*string{&d.InstanceId},
 	})
 	if err != nil {
@@ -825,7 +827,7 @@ func (d *Driver) createKeyPair() error {
 	keyName := d.MachineName
 
 	log.Debugf("creating key pair: %s", keyName)
-	_, err = d.getClient().ImportKeyPair(&ec2.ImportKeyPairInput{
+	_, err = d.GetClient().ImportKeyPair(&ec2.ImportKeyPairInput{
 		KeyName:           &keyName,
 		PublicKeyMaterial: publicKey,
 	})
@@ -842,7 +844,7 @@ func (d *Driver) terminate() error {
 	}
 
 	log.Debugf("terminating instance: %s", d.InstanceId)
-	_, err := d.getClient().TerminateInstances(&ec2.TerminateInstancesInput{
+	_, err := d.GetClient().TerminateInstances(&ec2.TerminateInstancesInput{
 		InstanceIds: []*string{&d.InstanceId},
 	})
 	if err != nil {
@@ -858,7 +860,7 @@ func (d *Driver) isSwarmMaster() bool {
 func (d *Driver) securityGroupAvailableFunc(id string) func() bool {
 	return func() bool {
 
-		securityGroup, err := d.getClient().DescribeSecurityGroups(&ec2.DescribeSecurityGroupsInput{
+		securityGroup, err := d.GetClient().DescribeSecurityGroups(&ec2.DescribeSecurityGroupsInput{
 			GroupIds: []*string{&id},
 		})
 		if err == nil && len(securityGroup.SecurityGroups) > 0 {
@@ -893,7 +895,7 @@ func (d *Driver) configureTags(tagGroups string) error {
 		}
 	}
 
-	_, err := d.getClient().CreateTags(&ec2.CreateTagsInput{
+	_, err := d.GetClient().CreateTags(&ec2.CreateTagsInput{
 		Resources: []*string{&d.InstanceId},
 		Tags:      tags,
 	})
@@ -923,7 +925,7 @@ func (d *Driver) configureSecurityGroups(groupNames []string) error {
 			Values: []*string{&d.VpcId},
 		},
 	}
-	groups, err := d.getClient().DescribeSecurityGroups(&ec2.DescribeSecurityGroupsInput{
+	groups, err := d.GetClient().DescribeSecurityGroups(&ec2.DescribeSecurityGroupsInput{
 		Filters: filters,
 	})
 	if err != nil {
@@ -943,7 +945,7 @@ func (d *Driver) configureSecurityGroups(groupNames []string) error {
 			group = securityGroup
 		} else {
 			log.Debugf("creating security group (%s) in %s", groupName, d.VpcId)
-			groupResp, err := d.getClient().CreateSecurityGroup(&ec2.CreateSecurityGroupInput{
+			groupResp, err := d.GetClient().CreateSecurityGroup(&ec2.CreateSecurityGroupInput{
 				GroupName:   aws.String(groupName),
 				Description: aws.String("Docker Machine"),
 				VpcId:       aws.String(d.VpcId),
@@ -969,7 +971,7 @@ func (d *Driver) configureSecurityGroups(groupNames []string) error {
 
 		if len(perms) != 0 {
 			log.Debugf("authorizing group %s with permissions: %v", groupNames, perms)
-			_, err := d.getClient().AuthorizeSecurityGroupIngress(&ec2.AuthorizeSecurityGroupIngressInput{
+			_, err := d.GetClient().AuthorizeSecurityGroupIngress(&ec2.AuthorizeSecurityGroupIngressInput{
 				GroupId:       group.GroupId,
 				IpPermissions: perms,
 			})
@@ -1036,7 +1038,7 @@ func (d *Driver) configureSecurityGroupPermissions(group *ec2.SecurityGroup) []*
 func (d *Driver) deleteKeyPair() error {
 	log.Debugf("deleting key pair: %s", d.KeyName)
 
-	_, err := d.getClient().DeleteKeyPair(&ec2.DeleteKeyPairInput{
+	_, err := d.GetClient().DeleteKeyPair(&ec2.DeleteKeyPairInput{
 		KeyName: &d.KeyName,
 	})
 	if err != nil {
@@ -1047,7 +1049,7 @@ func (d *Driver) deleteKeyPair() error {
 }
 
 func (d *Driver) getDefaultVPCId() (string, error) {
-	output, err := d.getClient().DescribeAccountAttributes(&ec2.DescribeAccountAttributesInput{})
+	output, err := d.GetClient().DescribeAccountAttributes(&ec2.DescribeAccountAttributesInput{})
 	if err != nil {
 		return "", err
 	}
