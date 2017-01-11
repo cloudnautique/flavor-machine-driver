@@ -6,6 +6,12 @@ import (
 	"github.com/aws/aws-sdk-go/service/ec2"
 )
 
+const (
+	tag             = "Rancher Cloud"
+	vpcCidnBlock    = "10.0.0.0/16"
+	subnetCidnBlock = "10.0.0.0/24"
+)
+
 func (d *Driver) setupAmazon() error {
 	client := d.AmazonEC2Driver.GetClient().(*ec2.EC2)
 

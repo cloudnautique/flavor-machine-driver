@@ -2,6 +2,9 @@ package rancher
 
 import (
 	"fmt"
+	"io/ioutil"
+	"os"
+	"path"
 	"strings"
 
 	"github.com/docker/machine/drivers/amazonec2"
@@ -11,12 +14,7 @@ import (
 	"github.com/docker/machine/libmachine/mcnflag"
 	"github.com/docker/machine/libmachine/state"
 	"github.com/packethost/docker-machine-driver-packet"
-)
-
-const (
-	tag             = "Rancher Cloud"
-	vpcCidnBlock    = "10.0.0.0/16"
-	subnetCidnBlock = "10.0.0.0/24"
+	"gopkg.in/yaml.v2"
 )
 
 var (
@@ -44,6 +42,8 @@ var _ drivers.Driver = &Driver{}
 type Driver struct {
 	*drivers.BaseDriver
 
+	ProviderDriverOptions map[string]interface{}
+
 	AvailableFlavors map[string]Flavor
 	flavor           Flavor
 
@@ -64,30 +64,6 @@ func NewDriver(hostName, storePath string) *Driver {
 
 func (d *Driver) DriverName() string {
 	return "rancher"
-}
-
-func (d *Driver) setupInnerDriver() error {
-	fmt.Println("setupInnerDriver")
-	if d.AmazonEC2Driver == nil {
-		d.AmazonEC2Driver = amazonec2.NewDriver(d.MachineName, d.StorePath)
-	}
-
-	if d.DigitalOceanDriver == nil {
-		d.DigitalOceanDriver = digitalocean.NewDriver(d.MachineName, d.StorePath)
-	}
-
-	d.PacketDriver.MachineName = d.MachineName
-	d.PacketDriver.StorePath = d.StorePath
-
-	if d.flavor.Provider == "amazonec2" {
-		d.Driver = d.AmazonEC2Driver
-	} else if d.flavor.Provider == "digitalocean" {
-		d.Driver = d.DigitalOceanDriver
-	} else if d.flavor.Provider == "packet" {
-		d.Driver = &d.PacketDriver
-	}
-
-	return nil
 }
 
 func (d *Driver) GetCreateFlags() []mcnflag.Flag {
@@ -114,11 +90,88 @@ func (d *Driver) GetCreateFlags() []mcnflag.Flag {
 	return flags
 }
 
-// Merge the three sources of flag values, from lowest priority to highest
+func (d *Driver) setupInnerDriver() error {
+	if d.AmazonEC2Driver == nil {
+		d.AmazonEC2Driver = amazonec2.NewDriver(d.MachineName, d.StorePath)
+	}
+
+	if d.DigitalOceanDriver == nil {
+		d.DigitalOceanDriver = digitalocean.NewDriver(d.MachineName, d.StorePath)
+	}
+
+	d.PacketDriver.MachineName = d.MachineName
+	d.PacketDriver.StorePath = d.StorePath
+
+	if d.flavor.Provider == "amazonec2" {
+		d.Driver = d.AmazonEC2Driver
+	} else if d.flavor.Provider == "digitalocean" {
+		d.Driver = d.DigitalOceanDriver
+	} else if d.flavor.Provider == "packet" {
+		d.Driver = &d.PacketDriver
+	}
+
+	return nil
+}
+
+func (d *Driver) readProviderAndFlavorInfo(selectedFlavor string) error {
+	flavorsDir := os.Getenv("FLAVORS_DIR")
+	providersDir := os.Getenv("PROVIDERS_DIR")
+
+	files, err := ioutil.ReadDir(flavorsDir)
+	if err != nil {
+		return fmt.Errorf("Failed to read flavors directory %s: %v", flavorsDir, err)
+	}
+
+	flavorFound := false
+	for _, file := range files {
+		if file.Name() == selectedFlavor+".yml" {
+			bytes, err := ioutil.ReadFile(path.Join(flavorsDir, file.Name()))
+			if err != nil {
+				return err
+			}
+			if err = yaml.Unmarshal(bytes, &d.flavor); err != nil {
+				return err
+			}
+			flavorFound = true
+			break
+		}
+	}
+	if !flavorFound {
+		return fmt.Errorf("Invalid flavor %s", selectedFlavor)
+	}
+
+	files, err = ioutil.ReadDir(providersDir)
+	if err != nil {
+		return fmt.Errorf("Failed to read providers directory: %v", err)
+	}
+
+	providerFound := false
+	for _, file := range files {
+		if file.Name() == d.flavor.Provider+".yml" {
+			bytes, err := ioutil.ReadFile(path.Join(providersDir, file.Name()))
+			if err != nil {
+				return err
+			}
+			if err = yaml.Unmarshal(bytes, &d.ProviderDriverOptions); err != nil {
+				return err
+			}
+			providerFound = true
+			break
+		}
+	}
+	if !providerFound {
+		return fmt.Errorf("Invalid provider %s", d.flavor.Provider)
+	}
+
+	return nil
+}
+
+// Merge the four sources of flag values, from lowest priority to highest
 // Defaults from inner driver
+// Values determined by the provider
 // Values determined by flavor
 // Values passed in via CLI (likely API keys)
-func getDriverOpts(mcnflags []mcnflag.Flag, flavorDriverOptions, cliDriverOptions map[string]interface{}) rpcdriver.RPCFlags {
+func getDriverOpts(mcnflags []mcnflag.Flag, providerDriverOptions, flavorDriverOptions, cliDriverOptions map[string]interface{}) rpcdriver.RPCFlags {
 	driverOpts := rpcdriver.RPCFlags{
 		Values: make(map[string]interface{}),
 	}
@@ -127,6 +180,9 @@ func getDriverOpts(mcnflags []mcnflag.Flag, flavorDriverOptions, cliDriverOption
 		if f.Default() == nil {
 			driverOpts.Values[f.String()] = false
 		}
+	}
+	for k, v := range providerDriverOptions {
+		driverOpts.Values[k] = v
 	}
 	for k, v := range flavorDriverOptions {
 		driverOpts.Values[k] = v
@@ -138,10 +194,8 @@ func getDriverOpts(mcnflags []mcnflag.Flag, flavorDriverOptions, cliDriverOption
 }
 
 func (d *Driver) SetConfigFromFlags(flags drivers.DriverOptions) error {
-	var ok bool
-	d.flavor, ok = d.AvailableFlavors[flags.String("flavor")]
-	if !ok {
-		return fmt.Errorf("Unrecognized flavor %s", flags.String("flavor"))
+	if err := d.readProviderAndFlavorInfo(flags.String("flavor")); err != nil {
+		return err
 	}
 
 	if err := d.setupInnerDriver(); err != nil {
@@ -150,7 +204,7 @@ func (d *Driver) SetConfigFromFlags(flags drivers.DriverOptions) error {
 
 	// TODO: try to avoid this type assertion
 	cliDriverOptions := flags.(*rpcdriver.RPCFlags)
-	driverOptions := getDriverOpts(d.Driver.GetCreateFlags(), cliDriverOptions.Values, d.flavor.DriverOptions)
+	driverOptions := getDriverOpts(d.Driver.GetCreateFlags(), d.ProviderDriverOptions, cliDriverOptions.Values, d.flavor.DriverOptions)
 
 	if err := d.Driver.SetConfigFromFlags(driverOptions); err != nil {
 		return err
