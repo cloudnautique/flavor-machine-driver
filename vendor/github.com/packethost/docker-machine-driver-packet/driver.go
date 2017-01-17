@@ -5,6 +5,7 @@ import (
 	"io/ioutil"
 	"strings"
 	"time"
+	"os"
 
 	"github.com/docker/machine/libmachine/drivers"
 	"github.com/docker/machine/libmachine/log"
@@ -22,7 +23,7 @@ const (
 var _ drivers.Driver = &Driver{}
 
 type Driver struct {
-	drivers.BaseDriver
+	*drivers.BaseDriver
 	ApiKey          string
 	ProjectID       string
 	Plan            string
@@ -34,13 +35,14 @@ type Driver struct {
 	Tags            []string
 	CaCertPath      string
 	SSHKeyID        string
+	UserDataFile    string
 }
 
 // NewDriver is a backward compatible Driver factory method.  Using
 // new(packet.Driver) is preferred.
-func NewDriver(hostName, storePath string) Driver {
-	return Driver{
-		BaseDriver: drivers.BaseDriver{
+func NewDriver(hostName, storePath string) *Driver {
+	return &Driver{
+		BaseDriver: &drivers.BaseDriver{
 			MachineName: hostName,
 			StorePath:   storePath,
 		},
@@ -74,7 +76,7 @@ func (d *Driver) GetCreateFlags() []mcnflag.Flag {
 		mcnflag.StringFlag{
 			Name:   "packet-plan",
 			Usage:  "Packet Server Plan",
-			Value:  "baremetal_1",
+			Value:  "baremetal_0",
 			EnvVar: "PACKET_PLAN",
 		},
 		mcnflag.StringFlag{
@@ -82,6 +84,11 @@ func (d *Driver) GetCreateFlags() []mcnflag.Flag {
 			Usage:  "Packet billing cycle, hourly or monthly",
 			Value:  "hourly",
 			EnvVar: "PACKET_BILLING_CYCLE",
+		},
+		mcnflag.StringFlag{
+			Name:   "packet-userdata",
+			Usage:  "Path to file with cloud-init user-data",
+			EnvVar: "PACKET_USERDATA",
 		},
 	}
 }
@@ -94,6 +101,9 @@ func (d *Driver) SetConfigFromFlags(flags drivers.DriverOptions) error {
 	if strings.Contains(flags.String("packet-os"), "coreos") {
 		d.SSHUser = "core"
 	}
+	if strings.Contains(flags.String("packet-os"), "rancher") {
+		d.SSHUser = "rancher"
+	}
 
 	d.ApiKey = flags.String("packet-api-key")
 	d.ProjectID = flags.String("packet-project-id")
@@ -101,6 +111,7 @@ func (d *Driver) SetConfigFromFlags(flags drivers.DriverOptions) error {
 	d.Facility = flags.String("packet-facility-code")
 	d.Plan = flags.String("packet-plan")
 	d.BillingCycle = flags.String("packet-billing-cycle")
+	d.UserDataFile = flags.String("packet-userdata")
 
 	if d.ApiKey == "" {
 		return fmt.Errorf("packet driver requires the --packet-api-key option")
@@ -117,6 +128,12 @@ func (d *Driver) GetSSHHostname() (string, error) {
 }
 
 func (d *Driver) PreCreateCheck() error {
+	if d.UserDataFile != "" {
+		if _, err := os.Stat(d.UserDataFile); os.IsNotExist(err) {
+			return fmt.Errorf("user-data file %s could not be found", d.UserDataFile)
+		}
+	}
+
 	flavors := d.getOsFlavors()
 	if !stringInSlice(d.OperatingSystem, flavors) {
 		return fmt.Errorf("specified --packet-os not one of %v", strings.Join(flavors, ", "))
@@ -137,6 +154,15 @@ func (d *Driver) PreCreateCheck() error {
 }
 
 func (d *Driver) Create() error {
+	var userdata string
+	if d.UserDataFile != "" {
+		buf, err := ioutil.ReadFile(d.UserDataFile)
+		if err != nil {
+			return err
+		}
+		userdata = string(buf)
+	}
+
 	log.Info("Creating SSH key...")
 
 	key, err := d.createSSHKey()
@@ -154,7 +180,7 @@ func (d *Driver) Create() error {
 		OS:           d.OperatingSystem,
 		BillingCycle: d.BillingCycle,
 		ProjectID:    d.ProjectID,
-		UserData:     d.UserData,
+		UserData:     userdata,
 		Tags:         d.Tags,
 	}
 
@@ -324,7 +350,7 @@ func (d *Driver) getClient() *packngo.Client {
 }
 
 func (d *Driver) getOsFlavors() []string {
-	return []string{"ubuntu_14_04"}
+	return []string{"centos_7", "coreos_alpha", "coreos_beta", "coreos_stable", "debian_8", "freebsd_10_8", "rancher", "ubuntu_14_04", "ubuntu_16_04"}
 }
 
 func stringInSlice(a string, list []string) bool {
