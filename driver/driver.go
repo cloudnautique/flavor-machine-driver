@@ -55,7 +55,7 @@ type Driver struct {
 
 	AmazonEC2Driver    *amazonec2.Driver
 	DigitalOceanDriver *digitalocean.Driver
-	PacketDriver       packet.Driver
+	PacketDriver       *packet.Driver
 	Driver             drivers.Driver
 }
 
@@ -123,9 +123,11 @@ func (d *Driver) setupInnerDriver() error {
 	if d.AmazonEC2Driver == nil {
 		d.AmazonEC2Driver = amazonec2.NewDriver(d.MachineName, d.StorePath)
 	}
-
 	if d.DigitalOceanDriver == nil {
 		d.DigitalOceanDriver = digitalocean.NewDriver(d.MachineName, d.StorePath)
+	}
+	if d.PacketDriver == nil {
+		d.PacketDriver = packet.NewDriver(d.MachineName, d.StorePath)
 	}
 
 	if d.flavor.Provider == "amazonec2" {
@@ -133,9 +135,7 @@ func (d *Driver) setupInnerDriver() error {
 	} else if d.flavor.Provider == "digitalocean" {
 		d.Driver = d.DigitalOceanDriver
 	} else if d.flavor.Provider == "packet" {
-		d.Driver = &d.PacketDriver
-		d.PacketDriver.MachineName = d.MachineName
-		d.PacketDriver.StorePath = d.StorePath
+		d.Driver = d.PacketDriver
 	}
 
 	return nil
