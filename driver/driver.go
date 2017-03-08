@@ -70,7 +70,7 @@ func (d *Driver) GetCreateFlags() []mcnflag.Flag {
 	// Rancher specific flags
 	flags := []mcnflag.Flag{
 		mcnflag.StringFlag{
-			Name: "flavor",
+			Name: "rancher-flavor",
 		},
 	}
 
