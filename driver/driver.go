@@ -7,6 +7,9 @@ import (
 	"path"
 	"strings"
 
+	"gopkg.in/yaml.v2"
+
+	log "github.com/Sirupsen/logrus"
 	"github.com/docker/machine/drivers/amazonec2"
 	"github.com/docker/machine/drivers/digitalocean"
 	"github.com/docker/machine/libmachine/drivers"
@@ -14,7 +17,10 @@ import (
 	"github.com/docker/machine/libmachine/mcnflag"
 	"github.com/docker/machine/libmachine/state"
 	"github.com/packethost/docker-machine-driver-packet"
-	"gopkg.in/yaml.v2"
+)
+
+const (
+	flagPrefix = "rancher-"
 )
 
 var (
@@ -66,11 +72,33 @@ func (d *Driver) DriverName() string {
 	return "rancher"
 }
 
+// Transforms a list of flags to add rancher- as a prefix
+func addPrefixToFlags(flags []mcnflag.Flag) []mcnflag.Flag {
+	var newFlags []mcnflag.Flag
+	for _, flag := range flags {
+		switch flag := flag.(type) {
+		case mcnflag.BoolFlag:
+			flag.Name = flagPrefix + flag.Name
+			newFlags = append(newFlags, flag)
+		case mcnflag.IntFlag:
+			flag.Name = flagPrefix + flag.Name
+			newFlags = append(newFlags, flag)
+		case mcnflag.StringFlag:
+			flag.Name = flagPrefix + flag.Name
+			newFlags = append(newFlags, flag)
+		case mcnflag.StringSliceFlag:
+			flag.Name = flagPrefix + flag.Name
+			newFlags = append(newFlags, flag)
+		}
+	}
+	return newFlags
+}
+
 func (d *Driver) GetCreateFlags() []mcnflag.Flag {
 	// Rancher specific flags
 	flags := []mcnflag.Flag{
 		mcnflag.StringFlag{
-			Name: "rancher-flavor",
+			Name: "flavor",
 		},
 	}
 
@@ -87,7 +115,8 @@ func (d *Driver) GetCreateFlags() []mcnflag.Flag {
 		}
 	}
 
-	return flags
+	// Docker Machine requires all driver flags to be prefixed with rancher-
+	return addPrefixToFlags(flags)
 }
 
 func (d *Driver) setupInnerDriver() error {
@@ -99,15 +128,14 @@ func (d *Driver) setupInnerDriver() error {
 		d.DigitalOceanDriver = digitalocean.NewDriver(d.MachineName, d.StorePath)
 	}
 
-	d.PacketDriver.MachineName = d.MachineName
-	d.PacketDriver.StorePath = d.StorePath
-
 	if d.flavor.Provider == "amazonec2" {
 		d.Driver = d.AmazonEC2Driver
 	} else if d.flavor.Provider == "digitalocean" {
 		d.Driver = d.DigitalOceanDriver
 	} else if d.flavor.Provider == "packet" {
 		d.Driver = &d.PacketDriver
+		d.PacketDriver.MachineName = d.MachineName
+		d.PacketDriver.StorePath = d.StorePath
 	}
 
 	return nil
@@ -115,7 +143,9 @@ func (d *Driver) setupInnerDriver() error {
 
 func (d *Driver) readProviderAndFlavorInfo(selectedFlavor string) error {
 	flavorsDir := os.Getenv("FLAVORS_DIR")
+	log.Debugf("Reading flavor configs from directory %s", flavorsDir)
 	providersDir := os.Getenv("PROVIDERS_DIR")
+	log.Debugf("Reading provider configs from directory %s", providersDir)
 
 	files, err := ioutil.ReadDir(flavorsDir)
 	if err != nil {
@@ -166,6 +196,18 @@ func (d *Driver) readProviderAndFlavorInfo(selectedFlavor string) error {
 	return nil
 }
 
+// Strips off the rancher- prefix from flags
+func stripPrefixFromFlags(flags rpcdriver.RPCFlags) rpcdriver.RPCFlags {
+	for k, v := range flags.Values {
+		s := fmt.Sprint(k)
+		if strings.Contains(s, flagPrefix) {
+			delete(flags.Values, k)
+			flags.Values[strings.Replace(s, flagPrefix, "", -1)] = v
+		}
+	}
+	return flags
+}
+
 // Merge the four sources of flag values, from lowest priority to highest
 // Defaults from inner driver
 // Values determined by the provider
@@ -190,11 +232,13 @@ func getDriverOpts(mcnflags []mcnflag.Flag, providerDriverOptions, flavorDriverO
 	for k, v := range cliDriverOptions {
 		driverOpts.Values[k] = v
 	}
-	return driverOpts
+
+	// Strip off the rancher- prefix since inner drivers won't recognize it
+	return stripPrefixFromFlags(driverOpts)
 }
 
 func (d *Driver) SetConfigFromFlags(flags drivers.DriverOptions) error {
-	if err := d.readProviderAndFlavorInfo(flags.String("flavor")); err != nil {
+	if err := d.readProviderAndFlavorInfo(flags.String("rancher-flavor")); err != nil {
 		return err
 	}
 
