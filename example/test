@@ -1,0 +1,8 @@
+#!/bin/bash
+set -ex
+
+export RANCHER_MACHINE_DRIVER_DEBUG=true
+export FLAVORS_DIR=${PWD}/flavors
+export PROVIDERS_DIR=${PWD}/providers
+
+docker-machine create --driver rancher --rancher-flavor=sample --rancher-digitalocean-access-token ... please-delete-this
