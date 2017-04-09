@@ -24,6 +24,20 @@ const (
 )
 
 var (
+	flavorsDirDefault   = "/machine/flavors"
+	providersDirDefault = "/machine/providers"
+)
+
+func init() {
+	home := os.Getenv("CATTLE_HOME")
+	if home == "" {
+		home = "/var/lib/cattle"
+	}
+	flavorsDirDefault = home + flavorsDirDefault
+	providersDirDefault = home + providersDirDefault
+}
+
+var (
 	apiKeyFlagNames = []string{
 		// Amazon
 		"access-key",
@@ -40,7 +54,7 @@ var (
 
 type Flavor struct {
 	Provider      string
-	DriverOptions map[string]interface{}
+	DriverOptions map[string]interface{} `yaml:"driver_options,omitempty"`
 }
 
 var _ drivers.Driver = &Driver{}
@@ -141,10 +155,18 @@ func (d *Driver) setupInnerDriver() error {
 	return nil
 }
 
+func getenv(name, def string) string {
+	v := os.Getenv(name)
+	if v == "" {
+		return def
+	}
+	return v
+}
+
 func (d *Driver) readProviderAndFlavorInfo(selectedFlavor string) error {
-	flavorsDir := os.Getenv("FLAVORS_DIR")
+	flavorsDir := getenv("FLAVORS_DIR", flavorsDirDefault)
 	log.Debugf("Reading flavor configs from directory %s", flavorsDir)
-	providersDir := os.Getenv("PROVIDERS_DIR")
+	providersDir := getenv("PROVIDERS_DIR", providersDirDefault)
 	log.Debugf("Reading provider configs from directory %s", providersDir)
 
 	files, err := ioutil.ReadDir(flavorsDir)
@@ -153,8 +175,9 @@ func (d *Driver) readProviderAndFlavorInfo(selectedFlavor string) error {
 	}
 
 	flavorFound := false
+	selectedFlavorFile := selectedFlavor + ".yaml"
 	for _, file := range files {
-		if file.Name() == selectedFlavor+".yml" {
+		if file.Name() == selectedFlavorFile {
 			bytes, err := ioutil.ReadFile(path.Join(flavorsDir, file.Name()))
 			if err != nil {
 				return err
@@ -167,17 +190,19 @@ func (d *Driver) readProviderAndFlavorInfo(selectedFlavor string) error {
 		}
 	}
 	if !flavorFound {
-		return fmt.Errorf("Invalid flavor %s", selectedFlavor)
+		return fmt.Errorf("Invalid flavor %s, did not file %s", selectedFlavor, selectedFlavorFile)
 	}
 
 	files, err = ioutil.ReadDir(providersDir)
-	if err != nil {
+	if os.IsNotExist(err) {
+		return nil
+	} else if err != nil {
 		return fmt.Errorf("Failed to read providers directory: %v", err)
 	}
 
-	providerFound := false
+	providerFile := d.flavor.Provider + ".yaml"
 	for _, file := range files {
-		if file.Name() == d.flavor.Provider+".yml" {
+		if file.Name() == providerFile {
 			bytes, err := ioutil.ReadFile(path.Join(providersDir, file.Name()))
 			if err != nil {
 				return err
@@ -185,12 +210,8 @@ func (d *Driver) readProviderAndFlavorInfo(selectedFlavor string) error {
 			if err = yaml.Unmarshal(bytes, &d.ProviderDriverOptions); err != nil {
 				return err
 			}
-			providerFound = true
 			break
 		}
-	}
-	if !providerFound {
-		return fmt.Errorf("Invalid provider %s", d.flavor.Provider)
 	}
 
 	return nil
