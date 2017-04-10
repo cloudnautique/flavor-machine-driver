@@ -7,12 +7,12 @@ ARCH=${ARCH:?"ARCH not set"}
 SUFFIX=""
 [ "${ARCH}" != "amd64" ] && SUFFIX="_${ARCH}"
 
-cd $(dirname $0)/../package
+cd $(dirname $0)/..
 
 TAG=${TAG:-${VERSION}${SUFFIX}}
 REPO=${REPO:-rancher}
 
-cp ../bin/machine-driver .
-docker build -t ${REPO}/machine-driver:${TAG} .
+mkdir -p dist/artifacts
+gzip -c bin/docker-machine-driver-rancher > dist/artifacts/docker-machine-driver-rancher.gz
 
-echo Built ${REPO}/machine-driver:${TAG}
+echo Built dist/artifacts/docker-machine-driver-rancher.gz
