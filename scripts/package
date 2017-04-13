@@ -13,6 +13,6 @@ TAG=${TAG:-${VERSION}${SUFFIX}}
 REPO=${REPO:-rancher}
 
 mkdir -p dist/artifacts
-gzip -c bin/docker-machine-driver-rancher > dist/artifacts/docker-machine-driver-rancher.gz
+tar cvzf dist/artifacts/docker-machine-driver-rancher.tar.gz bin/docker-machine-driver-rancher
 
-echo Built dist/artifacts/docker-machine-driver-rancher.gz
+echo Built dist/artifacts/docker-machine-driver-rancher.tar.gz
