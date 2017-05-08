@@ -5,7 +5,7 @@ import (
 
 	"github.com/Sirupsen/logrus"
 	"github.com/docker/machine/libmachine/drivers/plugin"
-	"github.com/rancherlabs/caas-machine-driver/driver"
+	"github.com/rancher/flavor-machine-driver/driver"
 )
 
 func main() {
