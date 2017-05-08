@@ -1,7 +1,7 @@
-CaaS Machine Driver
+Flavor Machine Driver
 ========
 
-A Docker Machine driver for adding hosts in CaaS.
+A Docker Machine driver for adding hosts in based off of pre-defined flavors.
 
 ## Building
 
